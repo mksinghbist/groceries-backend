@@ -1,0 +1,232 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  VENDOR
+  ADMIN
+  DELIVERY
+}
+
+enum VendorStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  PAID
+  PROCESSING
+  READY_FOR_DELIVERY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum PaymentMethod {
+  ONLINE
+  CASH_ON_DELIVERY
+}
+
+enum DeliveryStatus {
+  ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  passwordHash String
+  name         String
+  role         UserRole       @default(CUSTOMER)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  vendor       Vendor?
+  cart         Cart?
+  orders       Order[]
+  addresses    Address[]
+  refreshTokens RefreshToken[]
+  deliveries   Delivery[]     @relation("DeliveryAgent")
+}
+
+model Vendor {
+  id        String       @id @default(cuid())
+  userId    String       @unique
+  status    VendorStatus @default(PENDING)
+  businessName String
+  phone     String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stores    Store[]
+}
+
+model Store {
+  id        String      @id @default(cuid())
+  vendorId  String
+  name      String
+  address   String
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  vendor    Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  inventory Inventory[]
+  orders    Order[]
+  products  Product[]
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  parentId  String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  parent    Category? @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children  Category[] @relation("CategoryHierarchy")
+  products  Product[]
+
+  @@index([parentId])
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  storeId     String
+  categoryId  String
+  name        String
+  description String?
+  price       Decimal     @db.Decimal(10, 2)
+  imageUrl    String?
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  store       Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category    Category    @relation(fields: [categoryId], references: [id])
+  inventory   Inventory?
+  cartItems   CartItem[]
+  orderItems  OrderItem[]
+}
+
+model Inventory {
+  id        String   @id @default(cuid())
+  productId String   @unique
+  storeId   String
+  quantity  Int      @default(0)
+  updatedAt DateTime @updatedAt
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String     @unique
+  updatedAt DateTime   @updatedAt
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+}
+
+model CartItem {
+  id        String  @id @default(cuid())
+  cartId    String
+  productId String
+  quantity  Int
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+}
+
+model Address {
+  id           String   @id @default(cuid())
+  userId       String
+  recipient    String
+  phone        String
+  line1        String
+  line2        String?
+  city         String
+  postalCode   String
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders       Order[]
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  userId      String
+  storeId     String
+  addressId   String
+  status      OrderStatus @default(PENDING_PAYMENT)
+  total       Decimal     @db.Decimal(10, 2)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  user        User        @relation(fields: [userId], references: [id])
+  store       Store       @relation(fields: [storeId], references: [id])
+  address     Address     @relation(fields: [addressId], references: [id])
+  items       OrderItem[]
+  payment     Payment?
+  delivery    Delivery?
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  productId String
+  name      String
+  unitPrice Decimal  @db.Decimal(10, 2)
+  quantity  Int
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  orderId     String        @unique
+  providerRef String        @unique
+  method      PaymentMethod @default(ONLINE)
+  status      PaymentStatus @default(PENDING)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  order       Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model PaymentWebhookEvent {
+  id        String   @id
+  receivedAt DateTime @default(now())
+}
+
+model Delivery {
+  id             String         @id @default(cuid())
+  orderId        String         @unique
+  agentId        String
+  status         DeliveryStatus @default(ASSIGNED)
+  trackingNote   String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  order          Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  agent          User           @relation("DeliveryAgent", fields: [agentId], references: [id])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

@@ -1,0 +1,6 @@
+ALTER TYPE "OrderStatus" ADD VALUE 'CONFIRMED';
+
+CREATE TYPE "PaymentMethod" AS ENUM ('ONLINE', 'CASH_ON_DELIVERY');
+
+ALTER TABLE "Payment"
+ADD COLUMN "method" "PaymentMethod" NOT NULL DEFAULT 'ONLINE';
